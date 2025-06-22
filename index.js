@@ -1,131 +1,116 @@
 require('dotenv').config();
 const fs = require('fs');
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
-let permissions = JSON.parse(fs.readFileSync('./permissions.json'));
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const allowedUsers = ['1096566768421580912']; // Add user IDs
+const allowedRoles = ['123456789012345678'];  // Add role IDs
 
-function hasPermission(userId, member, command) {
-  if (permissions.users[userId]?.includes('*') || permissions.users[userId]?.includes(command)) return true;
-  return member.roles.cache.some(role =>
-    permissions.roles[role.id]?.includes('*') || permissions.roles[role.id]?.includes(command)
-  );
-}
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
+function isAllowed(interaction) {
+  if (allowedUsers.includes(interaction.user.id)) return true;
+  if (interaction.member?.roles?.cache?.some(r => allowedRoles.includes(r.id))) return true;
+  if (interaction.mentions?.users?.has(interaction.user.id)) return true;
+  return false;
+}
+
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== 'check') return;
 
-  // === /check ===
-  if (interaction.commandName === 'check') {
-    if (!hasPermission(interaction.user.id, interaction.member, 'check')) {
-      return interaction.reply({ content: '❌ You are not allowed to use this.', ephemeral: true });
-    }
-
-    const query = interaction.options.getString('name');
-    const url = `https://api.battlemetrics.com/players?filter[search]=${encodeURIComponent(query)}`;
-    const steamAPIKey = process.env.STEAM_API_KEY;
-
-    await interaction.deferReply();
-
-    try {
-      // === BattleMetrics ===
-      const bmRes = await fetch(url);
-      const bmData = await bmRes.json();
-
-      let bmText = '❌ No BattleMetrics match found.';
-      if (bmData.data.length > 0) {
-        const player = bmData.data[0];
-        const name = player.attributes.name || query;
-        const online = player.attributes.online;
-        const lastSeen = player.attributes.lastSeen;
-        const serverID = player.relationships.server?.data?.id || 'None';
-        const bmLink = `https://www.battlemetrics.com/rcon/players/${player.id}`;
-        const lastSeenText = lastSeen ? `<t:${Math.floor(new Date(lastSeen).getTime() / 1000)}:R>` : `Unknown`;
-
-        bmText = [
-          `🎮 BM Name: **${name}**`,
-          `🔗 BM Link: ${bmLink}`,
-          `🔎 BM Status: **${online ? '🟢 Online' : '🔴 Offline'}**`,
-          online ? `📌 Server ID: \`${serverID}\`` : `🕓 Last Seen: ${lastSeenText}`
-        ].join('\n');
-      }
-
-      // === Steam ===
-      let steamText = 'ℹ️ Steam check skipped.';
-      const steamID64 = query.match(/^7656\d{13}$/) ? query : null;
-      if (steamID64 && steamAPIKey) {
-        const steamRes = await fetch(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${steamAPIKey}&steamids=${steamID64}`);
-        const contentType = steamRes.headers.get('content-type');
-        if (!steamRes.ok || !contentType?.includes('application/json')) {
-          const text = await steamRes.text();
-          console.error('❌ Steam API error body:', text);
-          throw new Error('Invalid Steam API response');
-        }
-
-        const steamJson = await steamRes.json();
-        const playerList = steamJson.response.players;
-
-        if (!playerList.length) {
-          steamText = `❌ Steam ID not found or profile is private.`;
-        } else {
-          const playerInfo = playerList[0];
-          const persona = playerInfo.personaname;
-          const status = ['Offline', 'Online', 'Busy', 'Away', 'Snooze', 'Looking to Trade', 'Looking to Play'][playerInfo.personastate] || 'Unknown';
-
-          steamText = [
-            `👤 Steam Name: **${persona}**`,
-            `🌐 Steam Profile: ${playerInfo.profileurl}`,
-            `💡 Steam Status: **${status}**`
-          ].join('\n');
-        }
-      }
-
-      interaction.editReply({ content: `${bmText}\n\n${steamText}` });
-
-    } catch (err) {
-      console.error(err);
-      interaction.editReply(`⚠️ API Error: ${err.message}`);
-    }
+  if (!isAllowed(interaction)) {
+    return interaction.reply({ content: '❌ You’re not allowed to use this command.', ephemeral: true });
   }
 
-  // === /permissions ===
-  if (interaction.commandName === 'permissions') {
-    if (interaction.user.id !== '1096566768421580912') {
-      return interaction.reply({ content: '❌ You cannot manage permissions.', ephemeral: true });
+  const query = interaction.options.getString('name');
+  const steamAPIKey = process.env.STEAM_API_KEY;
+  const bmURL = `https://api.battlemetrics.com/players?filter[search]=${encodeURIComponent(query)}`;
+
+  await interaction.deferReply();
+
+  try {
+    // === BattleMetrics ===
+    const bmRes = await fetch(bmURL);
+    const bmData = await bmRes.json();
+
+    let bmFields = [];
+    let bmFound = false;
+
+    if (bmData.data.length > 0) {
+      const bmPlayer = bmData.data[0];
+      bmFound = true;
+      bmFields.push(
+        { name: 'BM Name', value: bmPlayer.attributes.name || 'Unknown', inline: true },
+        { name: 'Online', value: bmPlayer.attributes.online ? '🟢 Yes' : '🔴 No', inline: true },
+        { name: 'Player ID', value: bmPlayer.id, inline: false },
+      );
+
+      if (bmPlayer.attributes.lastSeen) {
+        const lastSeen = `<t:${Math.floor(new Date(bmPlayer.attributes.lastSeen).getTime() / 1000)}:R>`;
+        bmFields.push({ name: 'Last Seen', value: lastSeen, inline: true });
+      }
+
+      if (bmPlayer.relationships?.server?.data?.id) {
+        bmFields.push({ name: 'Server ID', value: bmPlayer.relationships.server.data.id, inline: true });
+      }
+
+      bmFields.push({ name: 'BattleMetrics Profile', value: `https://www.battlemetrics.com/rcon/players/${bmPlayer.id}`, inline: false });
     }
 
-    const sub = interaction.options.getSubcommand();
-    const type = interaction.options.getString('type');
-    const id = interaction.options.getString('id');
+    // === Steam ===
+    let steamEmbed = null;
+    const steamID64 = query.match(/^7656\d{13}$/) ? query : null;
 
-    if (sub === 'add') {
-      const cmd = interaction.options.getString('command');
-      const cmds = [cmd];
+    if (steamID64 && steamAPIKey) {
+      const steamRes = await fetch(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${steamAPIKey}&steamids=${steamID64}`);
+      const contentType = steamRes.headers.get('content-type');
+      if (!steamRes.ok || !contentType?.includes('application/json')) throw new Error('Steam API invalid');
 
-      if (type === 'user') permissions.users[id] = cmds;
-      else permissions.roles[id] = cmds;
+      const steamJson = await steamRes.json();
+      const p = steamJson.response.players[0];
+      if (p) {
+        const status = ['Offline', 'Online', 'Busy', 'Away', 'Snooze', 'Looking to Trade', 'Looking to Play'][p.personastate] || 'Unknown';
+        const createdAt = p.timecreated ? `<t:${p.timecreated}:F>` : 'Unknown';
+        const realName = p.realname || '—';
+        const country = p.loccountrycode || '—';
 
-      fs.writeFileSync('./permissions.json', JSON.stringify(permissions, null, 2));
-      return interaction.reply({
-        content: `✅ Added **${type}** \`${id}\` with access to: \`${cmds.join(', ')}\``,
-        ephemeral: true
-      });
+        steamEmbed = new EmbedBuilder()
+          .setTitle(`Steam Profile: ${p.personaname}`)
+          .setURL(p.profileurl)
+          .setThumbnail(p.avatarfull)
+          .addFields(
+            { name: 'Status', value: status, inline: true },
+            { name: 'Real Name', value: realName, inline: true },
+            { name: 'Country', value: country, inline: true },
+            { name: 'Steam ID', value: steamID64, inline: false },
+            { name: 'Joined', value: createdAt, inline: false }
+          )
+          .setColor(0x1b2838);
+      }
     }
 
-    if (sub === 'remove') {
-      if (type === 'user') delete permissions.users[id];
-      else delete permissions.roles[id];
+    // === Send Embed(s) ===
+    const embeds = [];
 
-      fs.writeFileSync('./permissions.json', JSON.stringify(permissions, null, 2));
-      return interaction.reply({
-        content: `✅ Removed **${type}** \`${id}\` from permissions.`,
-        ephemeral: true
-      });
+    if (bmFound) {
+      embeds.push(new EmbedBuilder()
+        .setTitle(`BattleMetrics Info`)
+        .addFields(...bmFields)
+        .setColor(0xea580c));
     }
+
+    if (steamEmbed) embeds.push(steamEmbed);
+    if (!embeds.length) embeds.push(new EmbedBuilder().setDescription('❌ No info found.').setColor(0xff0000));
+
+    await interaction.editReply({ embeds });
+
+  } catch (err) {
+    console.error(err);
+    await interaction.editReply({ content: `⚠️ Error: ${err.message}` });
   }
 });
 
