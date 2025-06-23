@@ -18,20 +18,18 @@ const client = new Client({
 
 client.commands = new Collection();
 const commands = loadCommands();
-commands.forEach(cmd => client.commands.set(cmd.data.name, cmd));
-
-
+commands.forEach(command => {
+  client.commands.set(command.data.name, command);
   const options = command.data.options ?? [];
   if (Array.isArray(options)) {
     console.log(`✅ Loaded: /${command.data.name} with options: ${options.map(o => o.name).join(', ')}`);
   } else {
     console.log(`✅ Loaded: /${command.data.name} with no options`);
   }
-}
+});
 
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  loadPermissions();
   processQueue(); // Start rate-limited queue
 });
 

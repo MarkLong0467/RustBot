@@ -1,47 +1,60 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getSteamData, getBattleMetricsData } = require('../utils/steamUtils');
-const { isAllowed } = require('../utils/permissionHandler');
+const { getSteamData } = require('../utils/SteamUtils');
+const { getBattleMetricsData } = require('../utils/battleMetricsUtils');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('check')
-    .setDescription('Check if a Rust/Atlas player is online')
-    .addStringOption(opt =>
-      opt.setName('name')
-        .setDescription('SteamID, Custom URL, or full profile URL')
+    .setDescription('Check a Steam user\'s info')
+    .addStringOption(option =>
+      option.setName('name')
+        .setDescription('Steam URL or ID')
         .setRequired(true)
     ),
-  async execute(interaction) {
-    const userId = interaction.user.id;
-    if (!isAllowed(userId, 'check')) {
-      return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
-    }
 
+  async execute(interaction) {
     const input = interaction.options.getString('name');
-    await interaction.deferReply();
+    console.log(`🔍 /check triggered with input: ${input}`);
+    await interaction.deferReply({ ephemeral: true });
 
     try {
-      const steamData = await getSteamData(input);
-      const bmData = await getBattleMetricsData(steamData.steamid);
+      const steamInfo = await getSteamData(input);
+      const battleInfo = await getBattleMetricsData(input);
+
+      console.log('✅ Steam Info:', steamInfo);
+      console.log('✅ BattleMetrics Info:', battleInfo);
+
+      if (!steamInfo && !battleInfo) {
+        return interaction.editReply({ content: '❌ No data found for that user.' });
+      }
 
       const embed = new EmbedBuilder()
-        .setTitle(`🔍 Steam Profile: ${steamData.personaname}`)
-        .setURL(steamData.profileurl)
-        .setThumbnail(steamData.avatarfull)
-        .addFields(
-          { name: 'SteamID', value: steamData.steamid, inline: true },
-          { name: 'Status', value: steamData.personastate.toString(), inline: true },
-          { name: 'Steam Created', value: `<t:${steamData.timecreated}:F>`, inline: true },
-          { name: 'Country', value: steamData.loccountrycode || 'Unknown', inline: true },
-          { name: 'State', value: steamData.locstatecode || 'N/A', inline: true },
-          { name: 'BattleMetrics ID', value: bmData.id || 'N/A', inline: true },
-          { name: 'Current Server', value: bmData.serverName || 'Offline', inline: false }
+        .setTitle('User Info')
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      if (steamInfo) {
+        embed.addFields(
+          { name: 'Steam Name', value: steamInfo.personaname || 'N/A', inline: true },
+          { name: 'Steam ID', value: steamInfo.steamid || 'N/A', inline: true },
+          { name: 'Profile', value: steamInfo.profileurl || 'N/A' }
         );
+        if (steamInfo.avatarfull) embed.setThumbnail(steamInfo.avatarfull);
+      }
+
+      if (battleInfo) {
+        embed.addFields(
+          { name: 'BattleMetrics Name', value: battleInfo.name || 'N/A', inline: true },
+          { name: 'Server', value: battleInfo.server || 'N/A', inline: true },
+          { name: 'Last Seen', value: battleInfo.lastSeen || 'N/A', inline: true }
+        );
+      }
 
       await interaction.editReply({ embeds: [embed] });
-    } catch (err) {
-      console.error('❌ Error:', err);
-      await interaction.editReply({ content: '❌ Failed to fetch user info. Try again later.' });
+
+    } catch (error) {
+      console.error('❌ Error in /check:', error);
+      await interaction.editReply({ content: '❌ Error while fetching data.' });
     }
   }
 };
