@@ -2,8 +2,10 @@ require('dotenv').config();
 const fs = require('fs');
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
-const allowedUsers = ['1096566768421580912']; // Change/add your user IDs
-const allowedRoles = ['123456789012345678'];  // Change/add role IDs
+const allowedUsers = ['1096566768421580912'];
+const allowedRoles = ['123456789012345678'];
+const cooldowns = new Map(); // per-user cooldown
+let lastGlobalCheckTime = 0; // global cooldown
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
@@ -27,6 +29,26 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: '❌ You’re not allowed to use this command.', ephemeral: true });
     }
 
+    const now = Date.now();
+    const globalCooldown = 5000;
+    const userCooldown = 10000;
+
+    // Global cooldown
+    if (now - lastGlobalCheckTime < globalCooldown) {
+      const wait = ((globalCooldown - (now - lastGlobalCheckTime)) / 1000).toFixed(1);
+      return interaction.reply({ content: `⏳ Global cooldown active. Try again in ${wait}s.`, ephemeral: true });
+    }
+
+    // Per-user cooldown
+    const lastUsed = cooldowns.get(interaction.user.id) || 0;
+    if (now - lastUsed < userCooldown) {
+      const wait = ((userCooldown - (now - lastUsed)) / 1000).toFixed(1);
+      return interaction.reply({ content: `⏳ Wait ${wait}s before using this again.`, ephemeral: true });
+    }
+
+    lastGlobalCheckTime = now;
+    cooldowns.set(interaction.user.id, now);
+
     const query = interaction.options.getString('name');
     const steamAPIKey = process.env.STEAM_API_KEY;
     const bmURL = `https://api.battlemetrics.com/players?filter[search]=${encodeURIComponent(query)}`;
@@ -47,7 +69,7 @@ client.on('interactionCreate', async interaction => {
         bmFields.push(
           { name: 'BM Name', value: bmPlayer.attributes.name || 'Unknown', inline: true },
           { name: 'Online', value: bmPlayer.attributes.online ? '🟢 Yes' : '🔴 No', inline: true },
-          { name: 'Player ID', value: bmPlayer.id, inline: false },
+          { name: 'Player ID', value: bmPlayer.id, inline: false }
         );
 
         if (bmPlayer.attributes.lastSeen) {
@@ -68,37 +90,41 @@ client.on('interactionCreate', async interaction => {
 
       if (steamID64 && steamAPIKey) {
         const steamRes = await fetch(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${steamAPIKey}&steamids=${steamID64}`);
-        const contentType = steamRes.headers.get('content-type');
-        if (!steamRes.ok || !contentType?.includes('application/json')) {
+        const contentType = steamRes.headers.get('content-type') || '';
+
+        if (steamRes.status === 429) {
+          console.warn('🚫 Steam rate limited');
+          steamEmbed = new EmbedBuilder().setColor(0xff9900).setDescription('🚫 Steam API rate limit. Try again later.');
+        } else if (!steamRes.ok || !contentType.includes('application/json')) {
           const text = await steamRes.text();
           console.error('❌ Steam API error body:', text);
           throw new Error('Invalid Steam API response');
-        }
-
-        const steamJson = await steamRes.json();
-        const playerList = steamJson.response.players;
-
-        if (!playerList.length) {
-          steamEmbed = new EmbedBuilder().setColor(0xff0000).setDescription(`❌ Steam ID not found or profile is private.`);
         } else {
-          const p = playerList[0];
-          const status = ['Offline', 'Online', 'Busy', 'Away', 'Snooze', 'Looking to Trade', 'Looking to Play'][p.personastate] || 'Unknown';
-          const createdAt = p.timecreated ? `<t:${p.timecreated}:F>` : 'Unknown';
-          const realName = p.realname || '—';
-          const country = p.loccountrycode || '—';
+          const steamJson = await steamRes.json();
+          const playerList = steamJson.response.players;
 
-          steamEmbed = new EmbedBuilder()
-            .setTitle(`Steam Profile: ${p.personaname}`)
-            .setURL(p.profileurl)
-            .setThumbnail(p.avatarfull)
-            .addFields(
-              { name: 'Status', value: status, inline: true },
-              { name: 'Real Name', value: realName, inline: true },
-              { name: 'Country', value: country, inline: true },
-              { name: 'Steam ID', value: steamID64, inline: false },
-              { name: 'Joined', value: createdAt, inline: false }
-            )
-            .setColor(0x1b2838);
+          if (!playerList.length) {
+            steamEmbed = new EmbedBuilder().setColor(0xff0000).setDescription(`❌ Steam ID not found or profile is private.`);
+          } else {
+            const p = playerList[0];
+            const status = ['Offline', 'Online', 'Busy', 'Away', 'Snooze', 'Looking to Trade', 'Looking to Play'][p.personastate] || 'Unknown';
+            const createdAt = p.timecreated ? `<t:${p.timecreated}:F>` : 'Unknown';
+            const realName = p.realname || '—';
+            const country = p.loccountrycode || '—';
+
+            steamEmbed = new EmbedBuilder()
+              .setTitle(`Steam Profile: ${p.personaname}`)
+              .setURL(p.profileurl)
+              .setThumbnail(p.avatarfull)
+              .addFields(
+                { name: 'Status', value: status, inline: true },
+                { name: 'Real Name', value: realName, inline: true },
+                { name: 'Country', value: country, inline: true },
+                { name: 'Steam ID', value: steamID64, inline: false },
+                { name: 'Joined', value: createdAt, inline: false }
+              )
+              .setColor(0x1b2838);
+          }
         }
       }
 
@@ -144,7 +170,7 @@ client.on('interactionCreate', async interaction => {
 
     if (sub === 'add') {
       const cmd = interaction.options.getString('command');
-      const validCmds = ['check', 'permissions']; // Add all your commands
+      const validCmds = ['check', 'permissions'];
       if (!validCmds.includes(cmd)) {
         return interaction.reply({ content: '❌ Invalid command name.', ephemeral: true });
       }
