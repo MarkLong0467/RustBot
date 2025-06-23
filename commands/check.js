@@ -14,30 +14,14 @@ module.exports = {
 
   async execute(interaction) {
     const target = interaction.options.getString('name');
-
     const allowed = isAllowed(interaction.user.id, 'check', interaction.member);
     if (!allowed) {
       return interaction.reply({ content: '❌ Not allowed to use this command.', ephemeral: true });
     }
 
     await interaction.deferReply({ ephemeral: false });
-
-    let steamInfo = '';
-    let bmInfo = '';
-
-    try {
-      steamInfo = await getSteamData(target);
-    } catch (err) {
-      console.error('Steam error:', err);
-      steamInfo = '❌ Failed to get Steam data.';
-    }
-
-    try {
-      bmInfo = await getBattleMetricsData(target);
-    } catch (err) {
-      console.error('BattleMetrics error:', err);
-      bmInfo = '❌ Failed to get BattleMetrics data.';
-    }
+    const steamInfo = await getSteamData(target);
+    const bmInfo = await getBattleMetricsData(target);
 
     const embed = {
       color: 0x00b0f4,

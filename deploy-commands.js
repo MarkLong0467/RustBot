@@ -1,8 +1,8 @@
 require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
-
+const fs = require('fs');
 const commandList = ['check', 'permissions', 'track', 'trackadd', 'trackremove']; // Add all your commands
-
+const rest = new REST().setToken(process.env.TOKEN);
 const commands = [
   new SlashCommandBuilder()
     .setName('check')
