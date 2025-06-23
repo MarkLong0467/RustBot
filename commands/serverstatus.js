@@ -1,66 +1,68 @@
 const { SlashCommandBuilder } = require('discord.js');
-const Gamedig = require('gamedig');
-
+const Gamedig = require('gamedig').default;
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('serverstatus')
-    .setDescription('Check status of an Atlas Rust server')
+    .setDescription('Check the status of an Atlas server.')
     .addStringOption(option =>
       option.setName('server')
-        .setDescription('Choose a server or type an IP:Port')
+        .setDescription('Select a preset Atlas server or choose "Other"')
         .setRequired(true)
         .addChoices(
-          { name: '10x', value: '10x.atlasrust.us' },
-          { name: '5x', value: '5x.atlasrust.us' },
-          { name: 'Large', value: 'large.atlasrust.us' },
+          { name: '10x', value: '10x.atlasrust.us:28015' },
+          { name: '5x', value: '5x.atlasrust.us:28015' },
+          { name: '2x', value: '2x.atlasrust.us:28015' },
+          { name: 'Large', value: 'large.atlasrust.us:28015' },
+          { name: 'Small', value: 'small.atlasrust.us:28015' },
           { name: 'Other', value: 'custom' }
         )
     )
     .addStringOption(option =>
       option.setName('ip')
-        .setDescription('Optional: IP:Port if "Other" selected')
+        .setDescription('Optional IP:PORT for custom servers (if "Other" selected)')
         .setRequired(false)
     ),
 
   async execute(interaction) {
     await interaction.deferReply();
 
-    const serverChoice = interaction.options.getString('server');
-    const customIP = interaction.options.getString('ip');
-    let target = serverChoice === 'custom' ? customIP : serverChoice;
+    const selected = interaction.options.getString('server');
+    const customInput = interaction.options.getString('ip');
 
-    if (!target) {
-      return interaction.editReply({ content: '❌ No server selected or IP missing.' });
+    let target = selected;
+    if (selected === 'custom') {
+      if (!customInput || !customInput.includes(':')) {
+        return interaction.editReply('❌ Invalid IP or missing port (use IP:PORT format).');
+      }
+      target = customInput;
     }
 
-    // Default port 28015 if not included
-    if (!target.includes(':')) {
-      target += ':28015';
-    }
-
-    const [host, port] = target.replace(/^connect\s+/, '').split(':');
+    const [host, port] = target.split(':');
+    console.log(`Querying ${host}:${port}`);
 
     try {
-      const data = await Gamedig.query({
-        type: 'rust',
+      const state = await Gamedig.query({
+        type: 'atlas',
         host,
-        port: parseInt(port),
+        port: parseInt(port)
       });
 
       const embed = {
-        title: `🟢 ${data.name}`,
-        color: 0x00ff00,
+        title: `🟢 Server Online: ${state.name}`,
+        color: 0x57F287,
         fields: [
-          { name: 'Players', value: `${data.raw.numplayers}/${data.maxplayers}`, inline: true },
-          { name: 'Map', value: data.map || 'Unknown', inline: true },
-          { name: 'IP', value: `${host}:${port}`, inline: true }
+          { name: 'IP', value: `${host}:${port}`, inline: true },
+          { name: 'Players', value: `${state.players.length}/${state.maxplayers}`, inline: true },
+          { name: 'Map', value: state.map || 'Unknown', inline: true }
         ],
-        footer: { text: `Server status fetched at ${new Date().toLocaleTimeString()}` }
+        footer: { text: `Server Status • Atlas Rust` },
+        timestamp: new Date().toISOString()
       };
 
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
-      await interaction.editReply({ content: '🔴 Server offline or unreachable.' });
+      console.error(err);
+      await interaction.editReply('🔴 Server offline or unreachable.');
     }
   }
 };
