@@ -1,62 +1,32 @@
+// utils/SteamUtils.js
 const axios = require('axios');
 
-const cache = new Map(); // steamId => { data, timestamp }
-const queue = [];
-let isProcessing = false;
+async function getSteamProfile(input) {
+  const apiKey = process.env.STEAM_API_KEY;
+  let steam64 = input;
 
-function delay(ms) {
-  return new Promise(res => setTimeout(res, ms));
-}
-
-async function processQueue() {
-  if (isProcessing || queue.length === 0) return;
-  isProcessing = true;
-
-  while (queue.length > 0) {
-    const { steamId, resolve, reject } = queue.shift();
-
+  // Check if input is a custom URL or vanity name
+  if (isNaN(input)) {
     try {
-      const now = Date.now();
-      const cached = cache.get(steamId);
-      if (cached && now - cached.timestamp < 30000) {
-        resolve(cached.data);
-      } else {
-        const res = await axios.get(
-          'https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/',
-          {
-            params: {
-              key: process.env.STEAM_API_KEY,
-              steamids: steamId
-            },
-            headers: {
-              'User-Agent': 'RustBot/1.0'
-            }
-          }
-        );
-
-        const player = res.data?.response?.players?.[0];
-        if (player) {
-          cache.set(steamId, { data: player, timestamp: now });
-          resolve(player);
-        } else {
-          reject(new Error('No player data found'));
-        }
-      }
+      const resolve = await axios.get(`https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key=${apiKey}&vanityurl=${input}`);
+      if (resolve.data.response.success !== 1) return null;
+      steam64 = resolve.data.response.steamid;
     } catch (err) {
-      reject(err);
+      console.error('Vanity URL lookup failed:', err);
+      return null;
     }
-
-    await delay(1100); // Wait before next
   }
 
-  isProcessing = false;
+  try {
+    const profile = await axios.get(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${apiKey}&steamids=${steam64}`);
+    const user = profile.data.response.players[0];
+    return user || null;
+  } catch (err) {
+    console.error('Steam profile fetch failed:', err);
+    return null;
+  }
 }
 
-function getSteamData(steamId) {
-  return new Promise((resolve, reject) => {
-    queue.push({ steamId, resolve, reject });
-    processQueue();
-  });
-}
-
-module.exports = { getSteamData };
+module.exports = {
+  getSteamProfile,
+};

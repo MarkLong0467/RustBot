@@ -1,27 +1,23 @@
+// utils/battleMetricsUtils.js
 const axios = require('axios');
-require('dotenv').config();
 
-async function getBattleMetricsData(input) {
-  const token = process.env.BATTLEMETRICS_API_KEY;
-  const headers = { Authorization: `Bearer ${token}` };
-
-  const id = input.replace(/\D/g, ''); // strip non-numeric
-  const url = `https://api.battlemetrics.com/players?filter[search]=${id}`;
+async function getBattleMetricsData(steamId) {
+  const token = process.env.BATTLEMETRICS_TOKEN;
+  const url = `https://api.battlemetrics.com/players?filter[search]=${steamId}`;
 
   try {
-    const res = await axios.get(url, { headers });
-    const player = res.data.data?.[0];
-    if (!player) return null;
-
-    return {
-      name: player.attributes.name || 'N/A',
-      lastSeen: player.attributes.lastSeen || 'N/A',
-      server: player.relationships?.server?.data?.id || 'unknown',
-    };
-  } catch (err) {
-    console.error('❌ BattleMetrics API error:', err.response?.data || err.message);
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('BattleMetrics API Error:', error);
     return null;
   }
 }
 
-module.exports = { getBattleMetricsData };
+module.exports = {
+  getBattleMetricsData,
+};

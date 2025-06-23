@@ -1,41 +1,67 @@
-const { SlashCommandBuilder } = require('discord.js');
-const { getSteamData, getBattleMetricsData, getRawSteamData } = require('../utils/SteamUtils');
-const { isAllowed } = require('../utils/permissionHandler');
+// commands/check.js
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { getBattleMetricsData } = require('../utils/battleMetricsUtils');
+const { getSteamProfile } = require('../utils/SteamUtils');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('check')
-    .setDescription('Get Steam and BattleMetrics info')
+    .setDescription('Check Steam & BattleMetrics info')
     .addStringOption(option =>
-      option.setName('name')
-        .setDescription('Steam URL, name, or ID')
+      option.setName('steamid')
+        .setDescription('Steam64 ID or Custom URL')
         .setRequired(true)
     ),
 
   async execute(interaction) {
-    const target = interaction.options.getString('name');
+    const raw = interaction.options.getString('steamid');
+    const input = raw?.trim();
 
-    const allowed = isAllowed(interaction.user.id, 'check', interaction.member);
-    if (!allowed) {
-      return interaction.reply({ content: '❌ Not allowed to use this command.', ephemeral: true });
+    if (!input) {
+      return interaction.reply({ content: '❌ Invalid Steam ID or URL.', ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: false });
+    await interaction.deferReply();
 
-    const steamInfoText = await getSteamData(target);
-    const bmInfo = await getBattleMetricsData(target);
-    const rawSteamData = await getRawSteamData(target);
+    // Get Steam info
+    const steam = await getSteamProfile(input);
+    if (!steam || !steam.steamid) {
+      return interaction.editReply('❌ Failed to fetch Steam profile.');
+    }
 
-    const embed = {
-      color: 0x00b0f4,
-      title: '✅ Info',
-      description: `${steamInfoText}\n\n${bmInfo}`,
-      thumbnail: {
-        url: rawSteamData?.avatarfull || 'https://cdn.discordapp.com/embed/avatars/0.png'
-      },
-      timestamp: new Date().toISOString(),
-    };
+    // Get BattleMetrics info using the Steam64 ID
+    const battle = await getBattleMetricsData(steam.steamid);
 
-    await interaction.editReply({ embeds: [embed] });
-  }
+    // Create Embed
+    const embed = new EmbedBuilder()
+      .setTitle(`${steam.personaname}`)
+      .setURL(steam.profileurl)
+      .setThumbnail(steam.avatarfull)
+      .setColor(0x0099ff)
+      .addFields(
+        { name: 'Steam ID', value: steam.steamid, inline: true },
+        { name: 'Account Created', value: steam.timecreated ? `<t:${steam.timecreated}:F>` : 'N/A', inline: true },
+        { name: 'Status', value: steam.personastate.toString(), inline: true },
+        { name: 'Profile Visibility', value: steam.communityvisibilitystate === 3 ? 'Public' : 'Private', inline: true },
+        { name: 'Country', value: steam.loccountrycode || 'N/A', inline: true },
+      );
+
+    // Add BattleMetrics data if available
+    if (battle && battle.data && battle.data.length > 0) {
+      const bm = battle.data[0];
+      const attr = bm.attributes;
+
+      embed.addFields(
+        { name: 'BattleMetrics ID', value: bm.id, inline: true },
+        { name: 'BM Name', value: attr.name || 'Unknown', inline: true },
+        { name: 'Last Seen', value: attr.lastSeen || 'N/A', inline: true },
+        { name: 'Time Played', value: attr.timePlayed ? `${(attr.timePlayed / 3600).toFixed(2)} hrs` : 'N/A', inline: true }
+      );
+    } else {
+      embed.addFields({ name: 'BattleMetrics', value: 'No data found.', inline: false });
+    }
+
+    embed.setTimestamp();
+    interaction.editReply({ embeds: [embed] });
+  },
 };
