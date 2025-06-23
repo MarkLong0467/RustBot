@@ -1,60 +1,51 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { getSteamData } = require('../utils/SteamUtils');
-const { getBattleMetricsData } = require('../utils/battleMetricsUtils');
+const { SlashCommandBuilder } = require('discord.js');
+const { getSteamData, getBattleMetricsData } = require('../utils/SteamUtils');
+const { isAllowed } = require('../utils/permissionHandler');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('check')
-    .setDescription('Check a Steam user\'s info')
+    .setDescription('Get Steam and BattleMetrics info')
     .addStringOption(option =>
       option.setName('name')
-        .setDescription('Steam URL or ID')
+        .setDescription('Steam URL, name, or ID')
         .setRequired(true)
     ),
 
   async execute(interaction) {
-    const input = interaction.options.getString('name');
-    console.log(`🔍 /check triggered with input: ${input}`);
-    await interaction.deferReply({ ephemeral: true });
+    const target = interaction.options.getString('name');
+
+    const allowed = isAllowed(interaction.user.id, 'check', interaction.member);
+    if (!allowed) {
+      return interaction.reply({ content: '❌ Not allowed to use this command.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: false });
+
+    let steamInfo = '';
+    let bmInfo = '';
 
     try {
-      const steamInfo = await getSteamData(input);
-      const battleInfo = await getBattleMetricsData(input);
-
-      console.log('✅ Steam Info:', steamInfo);
-      console.log('✅ BattleMetrics Info:', battleInfo);
-
-      if (!steamInfo && !battleInfo) {
-        return interaction.editReply({ content: '❌ No data found for that user.' });
-      }
-
-      const embed = new EmbedBuilder()
-        .setTitle('User Info')
-        .setColor(0x00AE86)
-        .setTimestamp();
-
-      if (steamInfo) {
-        embed.addFields(
-          { name: 'Steam Name', value: steamInfo.personaname || 'N/A', inline: true },
-          { name: 'Steam ID', value: steamInfo.steamid || 'N/A', inline: true },
-          { name: 'Profile', value: steamInfo.profileurl || 'N/A' }
-        );
-        if (steamInfo.avatarfull) embed.setThumbnail(steamInfo.avatarfull);
-      }
-
-      if (battleInfo) {
-        embed.addFields(
-          { name: 'BattleMetrics Name', value: battleInfo.name || 'N/A', inline: true },
-          { name: 'Server', value: battleInfo.server || 'N/A', inline: true },
-          { name: 'Last Seen', value: battleInfo.lastSeen || 'N/A', inline: true }
-        );
-      }
-
-      await interaction.editReply({ embeds: [embed] });
-
-    } catch (error) {
-      console.error('❌ Error in /check:', error);
-      await interaction.editReply({ content: '❌ Error while fetching data.' });
+      steamInfo = await getSteamData(target);
+    } catch (err) {
+      console.error('Steam error:', err);
+      steamInfo = '❌ Failed to get Steam data.';
     }
+
+    try {
+      bmInfo = await getBattleMetricsData(target);
+    } catch (err) {
+      console.error('BattleMetrics error:', err);
+      bmInfo = '❌ Failed to get BattleMetrics data.';
+    }
+
+    const embed = {
+      color: 0x00b0f4,
+      title: '✅ Info',
+      description: `${steamInfo}\n\n${bmInfo}`,
+      timestamp: new Date().toISOString(),
+    };
+
+    await interaction.editReply({ embeds: [embed] });
   }
 };

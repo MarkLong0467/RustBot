@@ -1,5 +1,12 @@
 const axios = require('axios');
 
+function getStatus(state) {
+  const states = [
+    'Offline', 'Online', 'Busy', 'Away', 'Snooze', 'Looking to Trade', 'Looking to Play'
+  ];
+  return states[state] || 'Unknown';
+}
+
 async function getSteamData(input) {
   const steamId = input.replace(/\D/g, '');
   const url = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.STEAM_API_KEY}&steamids=${steamId}`;
@@ -15,13 +22,6 @@ async function getSteamData(input) {
 **Game:** ${player.gameextrainfo || 'N/A'}
 **Country:** ${player.loccountrycode || 'Unknown'}
 **Avatar:** ${player.avatarfull}`;
-}
-
-function getStatus(state) {
-  const states = [
-    'Offline', 'Online', 'Busy', 'Away', 'Snooze', 'Looking to Trade', 'Looking to Play'
-  ];
-  return states[state] || 'Unknown';
 }
 
 async function getBattleMetricsData(input) {
