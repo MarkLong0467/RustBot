@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { updatePermissions, getPermissions } = require('../utils/permissionHandler');
+const { getPermissions, updatePermissions } = require('../utils/permissionHandler.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -7,96 +7,64 @@ module.exports = {
     .setDescription('Manage or view command permissions')
     .addSubcommand(sub =>
       sub.setName('add')
-        .setDescription('Allow a user or role to use a command')
-        .addStringOption(opt =>
-          opt.setName('type')
-            .setDescription('user or role')
-            .setRequired(true)
-            .addChoices(
-              { name: 'user', value: 'user' },
-              { name: 'role', value: 'role' },
-              { name: 'all', value: 'all' }
-            )
-        )
-        .addStringOption(opt =>
-          opt.setName('id')
-            .setDescription('User ID, role ID, or @mention')
-            .setRequired(true)
-        )
-        .addStringOption(opt =>
-          opt.setName('command')
-            .setDescription('Command name')
-            .setRequired(true)
-            .addChoices(
-              { name: 'check', value: 'check' },
-              { name: 'permissions', value: 'permissions' },
-            )
-        )
-    )
+        .setDescription('Add a user or role to a command')
+        .addStringOption(o => o.setName('command').setDescription('Command name or "all"').setRequired(true))
+        .addStringOption(o => o.setName('type').setDescription('user or role').setRequired(true))
+        .addStringOption(o => o.setName('id').setDescription('User ID or Role ID').setRequired(true)))
     .addSubcommand(sub =>
       sub.setName('remove')
-        .setDescription('Remove permission from a user or role')
-        .addStringOption(opt =>
-          opt.setName('type')
-            .setDescription('user or role')
-            .setRequired(true)
-            .addChoices(
-              { name: 'user', value: 'user' },
-              { name: 'role', value: 'role' },
-            )
-        )
-        .addStringOption(opt =>
-          opt.setName('id')
-            .setDescription('User ID, role ID, or @mention')
-            .setRequired(true)
-        )
-        .addStringOption(opt =>
-          opt.setName('command')
-            .setDescription('Command name')
-            .setRequired(true)
-            .addChoices(
-              { name: 'check', value: 'check' },
-              { name: 'permissions', value: 'permissions' },
-              { name: 'all', value: 'all' }
-            )
-        )
-    )
+        .setDescription('Remove a user or role from a command')
+        .addStringOption(o => o.setName('command').setDescription('Command name or "all"').setRequired(true))
+        .addStringOption(o => o.setName('type').setDescription('user or role').setRequired(true))
+        .addStringOption(o => o.setName('id').setDescription('User ID or Role ID').setRequired(true)))
     .addSubcommand(sub =>
       sub.setName('list')
-        .setDescription('View all command permissions')
-    ),
+        .setDescription('List all command permissions'))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
 
     if (sub === 'list') {
       const perms = getPermissions();
-      const out = Object.entries(perms).map(([cmd, data]) => {
-        const users = data.users.map(u => `<@${u}>`).join(', ') || 'None';
-        const roles = data.roles.map(r => `<@&${r}>`).join(', ') || 'None';
-        return `**/${cmd}**\n👤 Users: ${users}\n🎭 Roles: ${roles}`;
-      }).join('\n\n');
+      if (!perms || Object.keys(perms).length === 0) {
+        return interaction.reply({ content: '📜 **Permissions:**\n\nNo permissions set.', ephemeral: true });
+      }
 
-      return interaction.reply({
-        content: `📜 **Permissions:**\n\n${out || 'No permissions set.'}`,
-        ephemeral: true
-      });
+      let out = '📜 **Permissions:**\n\n';
+      for (const cmd in perms) {
+        out += `**/${cmd}**\n`;
+        const u = perms[cmd].users.map(x => `<@${x}>`).join(', ') || 'None';
+        const r = perms[cmd].roles.map(x => `<@&${x}>`).join(', ') || 'None';
+        out += `Users: ${u}\nRoles: ${r}\n\n`;
+      }
+
+      return interaction.reply({ content: out, ephemeral: true });
     }
 
-    const command = interaction.options.getString('command');
+    const command = interaction.options.getString('command').toLowerCase();
     const type = interaction.options.getString('type');
-    const rawId = interaction.options.getString('id');
-    const id = rawId.replace(/[<@&!>]/g, '');
-    const add = sub === 'add';
+    const id = interaction.options.getString('id');
 
-    const success = updatePermissions(command, type, id, add);
-    if (!success) {
-      return interaction.reply({ content: '❌ Failed to update permissions.', ephemeral: true });
+    if (!['user', 'role'].includes(type)) {
+      return interaction.reply({ content: '❌ Invalid type.', ephemeral: true });
     }
 
-    return interaction.reply({
-      content: `✅ Updated permissions for \`${command}\`.`,
-      ephemeral: true
-    });
+    const add = sub === 'add';
+    const updated = updatePermissions(command, type, id, add);
+
+    if (updated === 'exists') {
+      return interaction.reply({ content: `⚠️ Already added to \`${command}\`.`, ephemeral: true });
+    }
+
+    if (updated === 'removed') {
+      return interaction.reply({ content: `🗑️ Removed from \`${command}\`.`, ephemeral: true });
+    }
+
+    if (updated === 'added') {
+      return interaction.reply({ content: `✅ Updated permissions for \`${command}\`.`, ephemeral: true });
+    }
+
+    return interaction.reply({ content: '❌ Failed to update permissions.', ephemeral: true });
   }
 };

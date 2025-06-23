@@ -99,8 +99,6 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-
 rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands })
   .then(() => console.log('✅ Commands deployed!'))
   .catch(console.error);
