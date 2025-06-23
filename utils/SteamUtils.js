@@ -1,54 +1,62 @@
 const axios = require('axios');
 
-function getStatus(state) {
-  const states = [
-    'Offline', 'Online', 'Busy', 'Away', 'Snooze', 'Looking to Trade', 'Looking to Play'
-  ];
-  return states[state] || 'Unknown';
+const cache = new Map(); // steamId => { data, timestamp }
+const queue = [];
+let isProcessing = false;
+
+function delay(ms) {
+  return new Promise(res => setTimeout(res, ms));
 }
 
-async function getSteamData(input) {
-  const steamId = input.replace(/\D/g, '');
-  const url = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.STEAM_API_KEY}&steamids=${steamId}`;
-  const res = await axios.get(url);
-  const player = res.data.response.players[0];
+async function processQueue() {
+  if (isProcessing || queue.length === 0) return;
+  isProcessing = true;
 
-  if (!player) return 'No Steam data found.';
+  while (queue.length > 0) {
+    const { steamId, resolve, reject } = queue.shift();
 
-  return `**Steam Name:** ${player.personaname}
-**Steam ID:** ${player.steamid}
-**Profile:** ${player.profileurl}
-**Status:** ${getStatus(player.personastate)}
-**Game:** ${player.gameextrainfo || 'N/A'}
-**Country:** ${player.loccountrycode || 'Unknown'}
-**Avatar:** ${player.avatarfull}`;
+    try {
+      const now = Date.now();
+      const cached = cache.get(steamId);
+      if (cached && now - cached.timestamp < 30000) {
+        resolve(cached.data);
+      } else {
+        const res = await axios.get(
+          'https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/',
+          {
+            params: {
+              key: process.env.STEAM_API_KEY,
+              steamids: steamId
+            },
+            headers: {
+              'User-Agent': 'RustBot/1.0'
+            }
+          }
+        );
+
+        const player = res.data?.response?.players?.[0];
+        if (player) {
+          cache.set(steamId, { data: player, timestamp: now });
+          resolve(player);
+        } else {
+          reject(new Error('No player data found'));
+        }
+      }
+    } catch (err) {
+      reject(err);
+    }
+
+    await delay(1100); // Wait before next
+  }
+
+  isProcessing = false;
 }
 
-async function getRawSteamData(input) {
-  const steamId = input.replace(/\D/g, '');
-  const url = `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.STEAM_API_KEY}&steamids=${steamId}`;
-  const res = await axios.get(url);
-  return res.data.response.players[0] || null;
+function getSteamData(steamId) {
+  return new Promise((resolve, reject) => {
+    queue.push({ steamId, resolve, reject });
+    processQueue();
+  });
 }
 
-async function getBattleMetricsData(input) {
-  const res = await axios.get(`https://api.battlemetrics.com/players?filter[search]=${input}`);
-  const player = res.data?.data?.[0];
-
-  if (!player) return 'No BattleMetrics data found.';
-
-  const name = player.attributes.name;
-  const id = player.id;
-  const updated = player.attributes.updatedAt;
-  const lastSeen = `<t:${Math.floor(new Date(updated).getTime() / 1000)}:R>`;
-
-  return `**BM Name:** ${name}
-**BM ID:** ${id}
-**Last Seen:** ${lastSeen}`;
-}
-
-module.exports = {
-  getSteamData,
-  getBattleMetricsData,
-  getRawSteamData
-};
+module.exports = { getSteamData };
