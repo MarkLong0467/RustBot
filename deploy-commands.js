@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
-const commandList = ['check', 'permissions']; // Add more commands as needed
+const commandList = ['check', 'permissions', 'track', 'trackadd', 'trackremove']; // Add all your commands
 
 const commands = [
   new SlashCommandBuilder()
@@ -57,6 +57,45 @@ const commands = [
             .setDescription('Discord ID')
             .setRequired(true)
         )
+    ),
+
+  new SlashCommandBuilder()
+    .setName('track')
+    .setDescription('Create a tracking embed in this channel')
+    .addIntegerOption(option =>
+      option.setName('interval')
+        .setDescription('How often to check users')
+        .addChoices(
+          { name: '5s', value: 5 },
+          { name: '15s', value: 15 },
+          { name: '30s', value: 30 },
+          { name: '1m', value: 60 },
+          { name: '5m', value: 300 }
+        )
+        .setRequired(true)
+    )
+    .addRoleOption(option =>
+      option.setName('pingrole')
+        .setDescription('Optional role to ping when all are offline')
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('trackadd')
+    .setDescription('Add a user to track')
+    .addStringOption(option =>
+      option.setName('steamid')
+        .setDescription('SteamID or URL')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('trackremove')
+    .setDescription('Remove a tracked user')
+    .addStringOption(option =>
+      option.setName('steamid')
+        .setDescription('SteamID or URL')
+        .setRequired(true)
     )
 ].map(cmd => cmd.toJSON());
 
