@@ -10,37 +10,32 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Load command files
+// Load all command files
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-  const command = require(filePath);
+  const command = require(path.join(commandsPath, file));
   client.commands.set(command.data.name, command);
 }
 
-// Slash command handler
+// Load button interaction handler
+const interactionHandler = require('./events/interactionCreate');
+
+// Handle ALL interactions
 client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
-
   try {
-    await command.execute(interaction);
+    if (interaction.isChatInputCommand()) {
+      const command = client.commands.get(interaction.commandName);
+      if (!command) return;
+      await command.execute(interaction);
+    } else if (interaction.isButton()) {
+      await interactionHandler.execute(interaction); // Safely defer handled in file
+    }
   } catch (err) {
-    console.error(err);
-    await interaction.reply({ content: '❌ Error executing command.', ephemeral: true });
+    console.error('❌ Error in interactionCreate:', err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: '❌ Error occurred.', ephemeral: true });
+    }
   }
 });
-
-// Button interaction handler
-client.on('interactionCreate', require('./events/interactionCreate').execute);
-
-// Bot ready
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
-
-client.login(process.env.TOKEN);

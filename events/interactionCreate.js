@@ -24,6 +24,8 @@ module.exports = {
 
     const steamIdField = embed.fields.find(f => f.name === 'Steam ID');
     if (!steamIdField) return;
+    console.log("Steam ID from embed:", steamId);
+    console.log("Keys in DB:", Object.keys(db));
 
     const steamId = steamIdField.value.trim();
     const db = loadLookupData();

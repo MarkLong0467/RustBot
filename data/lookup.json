@@ -1,1 +1,16 @@
-{}
+{
+  "76561198880783953": {
+    "name": "MarkLong0467",
+    "steamId": "76561198133620640",
+    "createdAt": "Apr 19, 2024",
+    "risk": "High",
+    "reports": 3,
+    "hours": 82,
+    "bans": 3,
+    "searches": 6,
+    "lastLookup": 1750734361456,
+    "isWhitelisted": false,
+    "isInClan": false,
+    "isBlacklisted": false
+  }
+}
