@@ -1,38 +1,26 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
-
-const { loadPermissions } = require('./utils/permissionHandler');
-const { enqueueRequest, processQueue } = require('./utils/requestQueue');
-const { loadCommands } = require('./utils/loadCommands');
+const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent,
-  ],
+  intents: [GatewayIntentBits.Guilds],
+  partials: [Partials.Channel]
 });
 
 client.commands = new Collection();
-const commands = loadCommands();
-commands.forEach(command => {
+
+// Load command files
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = require(filePath);
   client.commands.set(command.data.name, command);
-  const options = command.data.options ?? [];
-  if (Array.isArray(options)) {
-    console.log(`✅ Loaded: /${command.data.name} with options: ${options.map(o => o.name).join(', ')}`);
-  } else {
-    console.log(`✅ Loaded: /${command.data.name} with no options`);
-  }
-});
+}
 
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  processQueue(); // Start rate-limited queue
-});
-
+// Slash command handler
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -41,14 +29,18 @@ client.on('interactionCreate', async interaction => {
 
   try {
     await command.execute(interaction);
-  } catch (error) {
-    console.error('❌ Command Error:', error);
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: 'Something went wrong.', ephemeral: true });
-    } else {
-      await interaction.reply({ content: 'Something went wrong.', ephemeral: true });
-    }
+  } catch (err) {
+    console.error(err);
+    await interaction.reply({ content: '❌ Error executing command.', ephemeral: true });
   }
+});
+
+// Button interaction handler
+client.on('interactionCreate', require('./events/interactionCreate').execute);
+
+// Bot ready
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
 client.login(process.env.TOKEN);
